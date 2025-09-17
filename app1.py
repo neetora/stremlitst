@@ -15,7 +15,7 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="Advanced Stock Analyzer", layout="wide", initial_sidebar_state="expanded")
 
 # Load the data
-df = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/stocks/stocks_series.csv', parse_dates=['Date'])
+df = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
 
 # Unique stocks
 stocks = df['name'].unique()
