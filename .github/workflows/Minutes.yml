@@ -1,0 +1,45 @@
+name: Update Stocks CSV Every 15 Minutes (Weekdays)
+
+on:
+  schedule:
+    - cron: "*/15 * * * 1-5"  # every 15 minutes, Mon–Fri
+  workflow_dispatch:           # allows manual run
+
+jobs:
+  update_csv:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout the repo
+      - uses: actions/checkout@v3
+
+      # 2️⃣ Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4️⃣ Run your data-fetching script
+      - name: Run fetch script
+        run: python fetch.py
+
+      # 5️⃣ Configure git with GitHub noreply email
+      - name: Configure Git
+        run: |
+          git config user.name "Badr"
+          git config user.email "57539984+neetora@users.noreply.github.com"
+
+      # 6️⃣ Commit and push updated CSV if there are changes
+      - name: Commit & Push CSV
+        run: |
+          git add stocks_series.csv
+          if ! git diff --cached --quiet; then
+            git commit -m "Update stocks_series.csv via GitHub Actions"
+            git push origin main
+          else
+            echo "No changes to commit."
+          fi
