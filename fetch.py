@@ -1,6 +1,6 @@
-# fetch_bmce.py
+#fetcher.py
 # =====================================================
-# BMCE Capital Bourse Data Fetcher (Robust Version)
+# Capital Bourse Data Fetcher (Robust Version)
 # - Manual run only (no scheduler)
 # - Async fetching with caching
 # - Resilient error handling and logging

@@ -7,3 +7,5 @@ torch
 scikit-learn
 gdown
 pyngrok
+pandas streamlit numpy plotly ta aiohttp aiofiles beautifulsoup4 loguru schedule seaborn matplotlib arch scipy transformers torch selenium webdriver-manager pyngrok
+yfinance scikit-learn statsmodels loguru streamlit pyngrok plotly pandas numpy scipy scikit-learn
