@@ -2,7 +2,7 @@ name: Update Stocks CSV Every Hour (Weekdays)
 
 on:
   schedule:
-    - cron: "0 * * * 1-5"  # every hour, Mon–Fri
+    - cron: "0 10,14 * * 1-5"  # 10:00 and 14:00 UTC, Mon–Fri
   workflow_dispatch:
 
 permissions:
