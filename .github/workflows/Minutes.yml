@@ -1,4 +1,4 @@
-name: Update Stocks CSV Every 15 Minutes (Weekdays)
+name: Update Stocks CSV Every Hour (Weekdays)
 
 on:
   schedule:
@@ -10,8 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout the repo
+      # 1️⃣ Checkout the repo with write permissions
       - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # 2️⃣ Set up Python
       - name: Set up Python
@@ -42,4 +44,3 @@ jobs:
             git push origin main
           else
             echo "No changes to commit."
-          fi
