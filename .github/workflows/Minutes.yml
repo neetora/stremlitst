@@ -27,7 +27,7 @@ jobs:
 
       # 4️⃣ Run your fetcher script
       - name: Run fetcher
-        run: python fetcher.py
+        run: python fetch.py
 
       # 5️⃣ Configure git with GitHub noreply email
       - name: Configure Git
