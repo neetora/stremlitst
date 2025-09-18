@@ -3,14 +3,17 @@ name: Update Stocks CSV Every Hour (Weekdays)
 on:
   schedule:
     - cron: "0 * * * 1-5"  # every hour, Mon–Fri
-  workflow_dispatch:       # allows manual run
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 👈 allow pushing commits
 
 jobs:
   update_csv:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout the repo with write permissions
+      # 1️⃣ Checkout repo with Actions token
       - uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -27,15 +30,15 @@ jobs:
 
       # 4️⃣ Run your fetcher script
       - name: Run fetcher
-        run: python fetch.py
+        run: python fetcher.py
 
-      # 5️⃣ Configure git with GitHub noreply email
+      # 5️⃣ Configure Git identity
       - name: Configure Git
         run: |
-          git config user.name "Badr"
-          git config user.email "57539984+neetora@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # 6️⃣ Commit & push updated CSVs if there are changes
+      # 6️⃣ Commit & push updated CSVs
       - name: Commit & Push CSVs
         run: |
           git add *.csv
