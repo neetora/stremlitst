@@ -21,7 +21,9 @@ df = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
 stocks = df['name'].unique()
 
 # Compute recommendations in background with enhanced math (weighted scores and probability-like normalization)
-# Updated: More realistic targets using volatility (ATR) and days using linear regression slope
+# Improved: Added support/resistance checks, Fibonacci signals for more reliability
+# For support/resistance: If price > recent resistance, add score; if near support, add for buy potential
+# For Fibonacci: If price at or above 61.8% retracement in uptrend, add bullish score
 if 'recommendations' not in st.session_state:
     recos = {}
     for stock in stocks:
@@ -55,15 +57,29 @@ if 'recommendations' not in st.session_state:
         sma_50 = stock_df_temp['Close'].rolling(window=50).mean()
         ema_20 = stock_df_temp['Close'].ewm(span=20, adjust=False).mean()
         
-        # Enhanced scoring: Weighted and normalized (e.g., RSI weight 0.4, MACD 0.3, MAs 0.3)
-        # Add math: Normalize scores to 0-100% 'probability' of buy signal based on thresholds
+        # Improved: Support/Resistance
+        close_vals = stock_df_temp['Close'].values
+        max_idx = argrelextrema(close_vals, np.greater, order=5)[0]
+        min_idx = argrelextrema(close_vals, np.less, order=5)[0]
+        recent_resistances = stock_df_temp['Close'].iloc[max_idx[-3:]] if len(max_idx) >= 3 else stock_df_temp['Close'].iloc[max_idx]
+        recent_supports = stock_df_temp['Close'].iloc[min_idx[-3:]] if len(min_idx) >= 3 else stock_df_temp['Close'].iloc[min_idx]
+        
+        # Improved: Fibonacci for recent swing
+        recent_df_fib = stock_df_temp.tail(100)
+        swing_high = recent_df_fib['High'].max()
+        swing_low = recent_df_fib['Low'].min()
+        fib_diff = swing_high - swing_low
+        fib_618 = swing_low + 0.618 * fib_diff  # Golden ratio retracement
+        
+        # Enhanced scoring: Increased max_score for new signals
         score = 0
         reasons = []
-        max_score = 7  # For normalization
+        max_score = 10  # Increased for new factors
         
+        current_price = stock_df_temp['Close'].iloc[-1]
         current_rsi = rsi.iloc[-1]
         if current_rsi < 30:
-            score += 3  # High weight for strong oversold
+            score += 3
             reasons.append("Strongly oversold (RSI < 30) - High buy probability")
         elif current_rsi < 50:
             score += 1
@@ -73,13 +89,26 @@ if 'recommendations' not in st.session_state:
             score += 2
             reasons.append("Bullish MACD crossover - Momentum building")
         
-        if stock_df_temp['Close'].iloc[-1] > sma_50.iloc[-1]:
+        if current_price > sma_50.iloc[-1]:
             score += 1
             reasons.append("Price above 50-day SMA - Uptrend confirmation")
         
         if ema_20.iloc[-1] > sma_50.iloc[-1]:
             score += 1
             reasons.append("EMA20 above SMA50 - Short-term strength")
+        
+        # New: Support/Resistance signals
+        if not recent_resistances.empty and current_price > recent_resistances.max():
+            score += 1
+            reasons.append("Price broken above recent resistance - Bullish breakout")
+        if not recent_supports.empty and abs(current_price - recent_supports.max()) / current_price < 0.02:  # Within 2% of support
+            score += 1
+            reasons.append("Price near recent support - Potential bounce")
+        
+        # New: Fibonacci signal
+        if current_price >= fib_618 and macd_line.iloc[-1] > 0:  # In uptrend context
+            score += 1
+            reasons.append("Price at/above 61.8% Fibonacci retracement - Bullish continuation")
         
         # Math enhancement: Normalize to percentage
         prob = (score / max_score) * 100
@@ -92,7 +121,6 @@ if 'recommendations' not in st.session_state:
         tr = np.maximum(high_low, np.maximum(high_close, low_close))
         atr = tr.rolling(window=14).mean().iloc[-1]
         
-        current_price = stock_df_temp['Close'].iloc[-1]
         targets = {
             'Target 1 (1.5x ATR)': current_price + 1.5 * atr,
             'Target 2 (3x ATR)': current_price + 3 * atr
