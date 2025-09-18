@@ -34,7 +34,7 @@ class Config:
         "Chrome/123.0.0.0 Safari/537.36"
     )
 
-    OUTPUT_DIR = Path("/content/drive/MyDrive/Colab Notebooks/stocks")
+    OUTPUT_DIR = Path(".")
     CACHE_DIR = OUTPUT_DIR / ".cache"
     MASI_PATH = OUTPUT_DIR / "masi_series.csv"
     STOCKS_PATH = OUTPUT_DIR / "stocks_series.csv"
