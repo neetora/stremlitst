@@ -25,9 +25,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 4️⃣ Run your data-fetching script
-      - name: Run fetch script
-        run: python fetch.py
+      # 4️⃣ Run your fetcher script
+      - name: Run fetcher
+        run: python fetcher.py
 
       # 5️⃣ Configure git with GitHub noreply email
       - name: Configure Git
@@ -35,12 +35,13 @@ jobs:
           git config user.name "Badr"
           git config user.email "57539984+neetora@users.noreply.github.com"
 
-      # 6️⃣ Commit and push updated CSV if there are changes
-      - name: Commit & Push CSV
+      # 6️⃣ Commit & push updated CSVs if there are changes
+      - name: Commit & Push CSVs
         run: |
-          git add stocks_series.csv
+          git add stocks_data/*.csv
           if ! git diff --cached --quiet; then
-            git commit -m "Update stocks_series.csv via GitHub Actions"
-            git push origin main
+              git commit -m "Update stock CSVs via GitHub Actions"
+              git push origin main
           else
-            echo "No changes to commit."
+              echo "No changes to commit."
+          fi
