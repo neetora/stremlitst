@@ -2,8 +2,8 @@ name: Update Stocks CSV Every 15 Minutes (Weekdays)
 
 on:
   schedule:
-    - cron: "*/15 * * * 1-5"  # every 15 minutes, Mon–Fri
-  workflow_dispatch:           # allows manual run
+    - cron: "0 * * * 1-5"  # every hour, Mon–Fri
+  workflow_dispatch:       # allows manual run
 
 jobs:
   update_csv:
