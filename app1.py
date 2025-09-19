@@ -133,7 +133,7 @@ if 'recommendations' not in st.session_state:
             score += 1
             reasons.append("Price at/above 61.8% Fibonacci retracement - Bullish continuation")
         
-        # New: Ichimoku signals
+        # Ichimoku signals
         cloud_top = max(senkou_a.iloc[-1], senkou_b.iloc[-1])
         cloud_bottom = min(senkou_a.iloc[-1], senkou_b.iloc[-1])
         if current_price > cloud_top:
@@ -176,6 +176,21 @@ if 'recommendations' not in st.session_state:
             else:
                 days_estimates[tgt_name] = 'N/A (No upward trend)'
         
+        # New: Swing Trading Strategies (math-based)
+        # Entry: RSI < 40 near support, MACD bullish, price above cloud
+        # Exit: RSI > 70 or at resistance or MACD bearish
+        # Risk: Stop loss at recent support - ATR
+        # Reward: Target at resistance + ATR
+        swing_strategies = []
+        if current_rsi < 40 and abs(current_price - recent_supports.max()) / current_price < 0.02 and macd_line.iloc[-1] > signal_line.iloc[-1] and current_price > cloud_top:
+            swing_strategies.append("Buy Entry: Oversold RSI near support with bullish MACD and above Ichimoku cloud. Probability: High (based on confluence).")
+        if current_rsi > 70 or current_price > recent_resistances.max() or macd_line.iloc[-1] < signal_line.iloc[-1]:
+            swing_strategies.append("Sell Exit: Overbought RSI or at resistance or bearish MACD. Lock in gains.")
+        
+        stop_loss = current_price - atr if not recent_supports.empty else current_price - 0.05 * current_price
+        expected_reward = atr * 2  # 2:1 risk-reward ratio
+        swing_strategies.append(f"Risk Management: Stop loss at {stop_loss:.2f} (1x ATR below). Target reward: +{expected_reward:.2f} (2:1 ratio).")
+        
         recos[stock] = {
             'score': score, 
             'prob': prob, 
@@ -184,7 +199,8 @@ if 'recommendations' not in st.session_state:
             'days_estimates': days_estimates,
             'current_price': current_price,
             'stock_df': stock_df_temp,  # Store df for plotting
-            'ichimoku': (tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span)  # Store for tab
+            'ichimoku': (tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span),  # Store for tab
+            'swing_strategies': swing_strategies  # New
         }
     
     # Get top 5
@@ -256,6 +272,11 @@ with col1:
                         net_profit = gross_return - broker_fee - tax
                         st.write(f"  Simulated Net Profit: {net_profit:.2f} (after {broker_fee:.2f} fee and {tax:.2f} tax)")
                 
+                # New: Swing Trading Strategies
+                st.write("**Swing Trading Strategies (Math-Based):**")
+                for strategy in data['swing_strategies']:
+                    st.write(f"- {strategy}")
+                
                 # Modern design: Plot projected targets
                 recent_df = data['stock_df'].tail(50)
                 fig = go.Figure()
@@ -267,6 +288,7 @@ with col1:
 
     elif selected_tab == 'All Stocks Analysis':
         st.header("Full Analysis of All Stocks")
+        st.write("**Meaning:** This tab provides a comprehensive overview of all stocks' scores, probabilities, and reasons based on multiple technical indicators.")
         all_df = pd.DataFrame.from_dict(st.session_state.all_recos, orient='index')
         all_df = all_df.sort_values('score', ascending=False)
         st.dataframe(all_df[['score', 'prob', 'reasons']], use_container_width=True)
@@ -275,32 +297,37 @@ with col1:
 
     elif selected_tab == 'Discounted Cash Flow (DCF)':
         st.header("Discounted Cash Flow (DCF)")
+        st.write("**Meaning:** DCF estimates a stock's intrinsic value by discounting future cash flows to present value. High value suggests undervalued stock.")
         st.write("This method requires future cash flow projections, discount rates, and terminal value, which are not available in the provided price data CSV. Additional fundamental data is needed for accurate DCF analysis.")
         st.write("Result: Not applicable with current data.")
 
     elif selected_tab == 'Earnings-Based Valuation':
         st.header("Earnings-Based Valuation")
+        st.write("**Meaning:** Uses ratios like P/E to compare earnings to price. Low P/E may indicate undervaluation.")
         st.write("This method uses metrics like P/E, PEG, EV/EBITDA, EPS, and growth prospects, which require earnings and financial statement data not present in the CSV.")
         st.write("Result: Not applicable with current data.")
 
     elif selected_tab == 'Dividend Discount Model':
         st.header("Dividend Discount Model")
+        st.write("**Meaning:** Values stock based on expected dividends. Useful for dividend-paying stocks; higher yield suggests better value.")
         st.write("This method values stocks based on expected future dividends, yield, payout ratio, and growth rate. Dividend data is not in the CSV.")
         st.write("Result: Not applicable with current data.")
 
     elif selected_tab == 'Financial Statement Analysis':
         st.header("Financial Statement Analysis")
+        st.write("**Meaning:** Analyzes balance sheets/income statements for health. High ROE/ROA indicates efficiency.")
         st.write("This involves examining income statements, balance sheets, cash flow, ROE, ROA, debt ratios – none of which are in the price data CSV.")
         st.write("Result: Not applicable with current data.")
 
     elif selected_tab == 'Economic Indicators':
         st.header("Economic Indicators")
+        st.write("**Meaning:** Macro factors like GDP/inflation affect markets. Rising GDP may boost stocks.")
         st.write("Incorporates macroeconomic factors like GDP, inflation, interest rates, PMI. These external indicators are not in the CSV.")
         st.write("Result: Not applicable with current data.")
 
     elif selected_tab == 'Candlestick Patterns':
         st.header("Candlestick Patterns")
-        st.write("Visual patterns indicating price movement and trend changes (e.g., Doji, Hammer, Shooting Star).")
+        st.write("**Meaning:** Visual representation of price action. Bullish patterns (e.g., hammer) suggest uptrends; bearish (e.g., shooting star) downtrends.")
         fig = go.Figure(data=[go.Candlestick(x=stock_df.index,
                                             open=stock_df['Open'],
                                             high=stock_df['High'],
@@ -312,7 +339,7 @@ with col1:
 
     elif selected_tab == 'Support & Resistance':
         st.header("Support & Resistance")
-        st.write("Price levels where stocks historically stall or reverse.")
+        st.write("**Meaning:** Support is a floor price (buyers enter); resistance is a ceiling (sellers enter). Breaks can signal trends.")
         close = stock_df['Close'].values
         max_idx = argrelextrema(close, np.greater, order=5)[0]
         min_idx = argrelextrema(close, np.less, order=5)[0]
@@ -338,7 +365,7 @@ with col1:
 
     elif selected_tab == 'Fibonacci Retracement':
         st.header("Fibonacci Retracement")
-        st.write("Identifies potential reversal points using mathematical ratios.")
+        st.write("**Meaning:** Mathematical ratios (e.g., 61.8%) predict reversal levels. Pullbacks to these can be buy opportunities in uptrends.")
         recent_df = stock_df.tail(100)
         high = recent_df['High'].max()
         low = recent_df['Low'].min()
@@ -357,7 +384,7 @@ with col1:
 
     elif selected_tab == 'Moving Averages':
         st.header("Moving Averages")
-        st.write("Smooths price data to identify trends.")
+        st.write("**Meaning:** Averages smooth price data. Crossovers (e.g., short MA above long) signal trends; golden cross is bullish.")
         sma_20 = stock_df['Close'].rolling(window=20).mean()
         ema_20 = stock_df['Close'].ewm(span=20, adjust=False).mean()
         sma_50 = stock_df['Close'].rolling(window=50).mean()
@@ -376,7 +403,7 @@ with col1:
 
     elif selected_tab == 'MACD':
         st.header("MACD")
-        st.write("Tracks trend momentum.")
+        st.write("**Meaning:** Measures momentum. Line above signal is bullish; divergences predict reversals.")
         def compute_macd(series, fast=12, slow=26, signal=9):
             ema_fast = series.ewm(span=fast, adjust=False).mean()
             ema_slow = series.ewm(span=slow, adjust=False).mean()
@@ -399,7 +426,7 @@ with col1:
 
     elif selected_tab == 'RSI':
         st.header("RSI")
-        st.write("Identifies overbought/oversold conditions.")
+        st.write("**Meaning:** Momentum oscillator; <30 oversold (buy), >70 overbought (sell). Divergences signal reversals.")
         def compute_rsi(series, period=14):
             delta = series.diff(1)
             gain = delta.where(delta > 0, 0).rolling(window=period).mean()
@@ -427,7 +454,7 @@ with col1:
 
     elif selected_tab == 'Ichimoku Cloud':
         st.header("Ichimoku Cloud")
-        st.write("Comprehensive indicator for trend, momentum, and support/resistance.")
+        st.write("**Meaning:** Trend indicator; price above cloud is bullish, crossovers signal momentum, cloud acts as support/resistance.")
         if selected_stock in st.session_state.all_recos:
             data = st.session_state.all_recos[selected_stock]
             tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span = data['ichimoku']
@@ -452,7 +479,7 @@ with col1:
 
     elif selected_tab == 'Machine Learning Models':
         st.header("Machine Learning Models")
-        st.write("Simple LSTM for price prediction.")
+        st.write("**Meaning:** Uses AI (LSTM) to predict future prices based on historical patterns. Low MSE indicates accurate model.")
         if len(stock_df) < 60:
             st.write("Insufficient data for ML training.")
         else:
