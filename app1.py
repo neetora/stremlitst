@@ -21,9 +21,8 @@ df = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
 stocks = df['name'].unique()
 
 # Compute recommendations in background with enhanced math (weighted scores and probability-like normalization)
-# Improved: Added support/resistance checks, Fibonacci signals for more reliability
-# For support/resistance: If price > recent resistance, add score; if near support, add for buy potential
-# For Fibonacci: If price at or above 61.8% retracement in uptrend, add bullish score
+# Improved: Added support/resistance checks, Fibonacci signals, and now Ichimoku for more reliability
+# For Ichimoku: Bullish if price > cloud, Tenkan > Kijun, Chikou > past price
 if 'recommendations' not in st.session_state:
     recos = {}
     for stock in stocks:
@@ -71,10 +70,34 @@ if 'recommendations' not in st.session_state:
         fib_diff = swing_high - swing_low
         fib_618 = swing_low + 0.618 * fib_diff  # Golden ratio retracement
         
+        # New: Ichimoku Cloud
+        def compute_ichimoku(df, tenkan=9, kijun=26, senkou_b=52):
+            high9 = df['High'].rolling(window=tenkan).max()
+            low9 = df['Low'].rolling(window=tenkan).min()
+            tenkan_sen = (high9 + low9) / 2
+            
+            high26 = df['High'].rolling(window=kijun).max()
+            low26 = df['Low'].rolling(window=kijun).min()
+            kijun_sen = (high26 + low26) / 2
+            
+            senkou_a = (tenkan_sen + kijun_sen) / 2
+            senkou_a = senkou_a.shift(kijun)
+            
+            high52 = df['High'].rolling(window=senkou_b).max()
+            low52 = df['Low'].rolling(window=senkou_b).min()
+            senkou_b = (high52 + low52) / 2
+            senkou_b = senkou_b.shift(kijun)
+            
+            chikou_span = df['Close'].shift(-kijun)
+            
+            return tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span
+        
+        tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span = compute_ichimoku(stock_df_temp)
+        
         # Enhanced scoring: Increased max_score for new signals
         score = 0
         reasons = []
-        max_score = 10  # Increased for new factors
+        max_score = 12  # Increased for Ichimoku
         
         current_price = stock_df_temp['Close'].iloc[-1]
         current_rsi = rsi.iloc[-1]
@@ -97,7 +120,7 @@ if 'recommendations' not in st.session_state:
             score += 1
             reasons.append("EMA20 above SMA50 - Short-term strength")
         
-        # New: Support/Resistance signals
+        # Support/Resistance signals
         if not recent_resistances.empty and current_price > recent_resistances.max():
             score += 1
             reasons.append("Price broken above recent resistance - Bullish breakout")
@@ -105,10 +128,20 @@ if 'recommendations' not in st.session_state:
             score += 1
             reasons.append("Price near recent support - Potential bounce")
         
-        # New: Fibonacci signal
+        # Fibonacci signal
         if current_price >= fib_618 and macd_line.iloc[-1] > 0:  # In uptrend context
             score += 1
             reasons.append("Price at/above 61.8% Fibonacci retracement - Bullish continuation")
+        
+        # New: Ichimoku signals
+        cloud_top = max(senkou_a.iloc[-1], senkou_b.iloc[-1])
+        cloud_bottom = min(senkou_a.iloc[-1], senkou_b.iloc[-1])
+        if current_price > cloud_top:
+            score += 1
+            reasons.append("Price above Ichimoku Cloud - Strong bullish trend")
+        if tenkan_sen.iloc[-1] > kijun_sen.iloc[-1]:
+            score += 1
+            reasons.append("Tenkan-sen above Kijun-sen - Bullish momentum")
         
         # Math enhancement: Normalize to percentage
         prob = (score / max_score) * 100
@@ -150,7 +183,8 @@ if 'recommendations' not in st.session_state:
             'targets': targets,
             'days_estimates': days_estimates,
             'current_price': current_price,
-            'stock_df': stock_df_temp  # Store df for plotting
+            'stock_df': stock_df_temp,  # Store df for plotting
+            'ichimoku': (tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span)  # Store for tab
         }
     
     # Get top 5
@@ -176,6 +210,7 @@ with st.sidebar:
         'Moving Averages',
         'MACD',
         'RSI',
+        'Ichimoku Cloud',
         'Machine Learning Models'
     ])
     st.markdown("### Select Stock for Details")
@@ -389,6 +424,31 @@ with col1:
             st.write("Status: Oversold")
         else:
             st.write("Status: Neutral")
+
+    elif selected_tab == 'Ichimoku Cloud':
+        st.header("Ichimoku Cloud")
+        st.write("Comprehensive indicator for trend, momentum, and support/resistance.")
+        if selected_stock in st.session_state.all_recos:
+            data = st.session_state.all_recos[selected_stock]
+            tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span = data['ichimoku']
+            
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df['Close'], mode='lines', name='Close Price'))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=tenkan_sen, mode='lines', name='Tenkan-sen'))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=kijun_sen, mode='lines', name='Kijun-sen'))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=senkou_a, mode='lines', name='Senkou Span A', fill=None))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=senkou_b, mode='lines', name='Senkou Span B', fill='tonexty', fillcolor='rgba(0,255,0,0.1)' if senkou_a.iloc[-1] > senkou_b.iloc[-1] else 'rgba(255,0,0,0.1)'))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=chikou_span, mode='lines', name='Chikou Span'))
+            fig.update_layout(title='Ichimoku Cloud', xaxis_title='Date', yaxis_title='Price')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.write("Current Tenkan-sen:", tenkan_sen.iloc[-1])
+            st.write("Current Kijun-sen:", kijun_sen.iloc[-1])
+            st.write("Current Senkou Span A:", senkou_a.iloc[-1])
+            st.write("Current Senkou Span B:", senkou_b.iloc[-1])
+            st.write("Current Chikou Span:", chikou_span.iloc[-1])
+        else:
+            st.write("Insufficient data for Ichimoku analysis.")
 
     elif selected_tab == 'Machine Learning Models':
         st.header("Machine Learning Models")
