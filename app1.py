@@ -214,6 +214,7 @@ with st.sidebar:
     st.markdown("### Navigation")
     selected_tab = st.radio("Go to", [
         'Recommendations',
+        'Portfolio Management',
         'All Stocks Analysis',
         'Discounted Cash Flow (DCF)',
         'Earnings-Based Valuation',
@@ -234,6 +235,10 @@ with st.sidebar:
 
 # Filter data for selected stock
 stock_df = df[df['name'] == selected_stock].set_index('Date').sort_index()
+
+# Initialize portfolio in session state
+if 'portfolio' not in st.session_state:
+    st.session_state.portfolio = {}  # {stock: {'quantity': q, 'entry_price': p}}
 
 # Main content with columns for modern layout
 col1, col2 = st.columns([3, 1])
@@ -285,6 +290,68 @@ with col1:
                     fig.add_hline(y=tgt_price, line_dash="dash", line_color="green", annotation_text=f"Target {tgt_price:.2f}")
                 fig.update_layout(title=f'Price Projection for {stock}', xaxis_title='Date', yaxis_title='Price', height=300)
                 st.plotly_chart(fig, use_container_width=True)
+
+    elif selected_tab == 'Portfolio Management':
+        st.header("Portfolio Management")
+        st.write("**Meaning:** Track your holdings, calculate gains/losses, and get recommendations based on analysis.")
+        
+        # Form to add stock to portfolio
+        with st.form(key='add_portfolio'):
+            add_stock = st.selectbox("Select Stock to Add", stocks)
+            quantity = st.number_input("Quantity", min_value=1, value=1)
+            entry_price = st.number_input("Entry Price", min_value=0.0, value=stock_df['Close'].iloc[-1])
+            submit = st.form_submit_button("Add to Portfolio")
+            if submit:
+                st.session_state.portfolio[add_stock] = {'quantity': quantity, 'entry_price': entry_price}
+        
+        if st.session_state.portfolio:
+            st.subheader("Your Portfolio")
+            portfolio_data = []
+            total_gain = 0
+            broker_fee_pct_port = st.number_input("Broker Fee for Portfolio (%)", min_value=0.0, max_value=10.0, value=0.5, key='port_fee')
+            tax_pct_port = st.number_input("Tax on Gains for Portfolio (%)", min_value=0.0, max_value=50.0, value=15.0, key='port_tax')
+            
+            for stock, info in st.session_state.portfolio.items():
+                stock_df_port = df[df['name'] == stock].set_index('Date').sort_index()
+                current_price = stock_df_port['Close'].iloc[-1]
+                value = current_price * info['quantity']
+                entry_value = info['entry_price'] * info['quantity']
+                gross_gain = value - entry_value
+                broker_fee = entry_value * (broker_fee_pct_port / 100)
+                tax = max(0, gross_gain - broker_fee) * (tax_pct_port / 100)
+                net_gain = gross_gain - broker_fee - tax
+                total_gain += net_gain
+                
+                # Recommendation
+                if stock in st.session_state.all_recos:
+                    reco = st.session_state.all_recos[stock]
+                    if reco['prob'] > 70:
+                        rec = "Buy More (High Probability Uptrend)"
+                    elif reco['prob'] < 30:
+                        rec = "Sell (Potential Downtrend)"
+                    else:
+                        rec = "Hold (Neutral)"
+                    proj = f"Target 1: {reco['targets']['Target 1 (1.5x ATR)']:.2f} in {reco['days_estimates']['Target 1 (1.5x ATR)']} days"
+                else:
+                    rec = "No Data"
+                    proj = "N/A"
+                
+                portfolio_data.append({
+                    'Stock': stock,
+                    'Quantity': info['quantity'],
+                    'Entry Price': info['entry_price'],
+                    'Current Price': current_price,
+                    'Gross Gain/Loss': gross_gain,
+                    'Net Gain/Loss': net_gain,
+                    'Recommendation': rec,
+                    'Projection': proj
+                })
+            
+            port_df = pd.DataFrame(portfolio_data)
+            st.dataframe(port_df, use_container_width=True)
+            st.metric("Total Net Portfolio Gain/Loss", f"{total_gain:.2f}")
+        else:
+            st.write("No stocks in portfolio yet.")
 
     elif selected_tab == 'All Stocks Analysis':
         st.header("Full Analysis of All Stocks")
