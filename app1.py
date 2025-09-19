@@ -10,6 +10,7 @@ import torch.optim as optim
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
+import yfinance as yf
 
 # Modern UI/UX: Set page config for wide layout and theme
 st.set_page_config(page_title="Advanced Stock Analyzer", layout="wide", initial_sidebar_state="expanded")
@@ -17,8 +18,23 @@ st.set_page_config(page_title="Advanced Stock Analyzer", layout="wide", initial_
 # Load the data
 df = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
 
-# Unique stocks
-stocks = df['name'].unique()
+# Unique stocks from CSV
+csv_stocks = df['name'].unique()
+
+# Ticker map for user's portfolio stocks
+ticker_map = {
+    'TGCC': 'TGC.MA',
+    'ITISSALAT AL MAGHRIB': 'IAM.MA',
+    'AKDITAL': 'AKT.MA',
+    'MARSA MAROC': 'MSA.MA',
+    'AFRIQUIA GAZ': 'GAZ.MA',
+    'SONASID': 'SID.MA',
+    'JET CONTRACTORS': 'JET.MA',
+    'CMGP GROUP': 'CMG.MA'
+}
+
+# All stocks: CSV + user's possible
+stocks = list(set(list(csv_stocks) + list(ticker_map.keys())))
 
 # Compute recommendations in background with enhanced math (weighted scores and probability-like normalization)
 # Improved: Added support/resistance checks, Fibonacci signals, and now Ichimoku for more reliability
@@ -26,7 +42,15 @@ stocks = df['name'].unique()
 if 'recommendations' not in st.session_state:
     recos = {}
     for stock in stocks:
-        stock_df_temp = df[df['name'] == stock].set_index('Date').sort_index()
+        if stock in csv_stocks:
+            stock_df_temp = df[df['name'] == stock].set_index('Date').sort_index()
+        else:
+            ticker = ticker_map.get(stock, stock + '.MA')
+            stock_df_temp = yf.download(ticker, period='2y')
+            if stock_df_temp.empty:
+                continue
+            stock_df_temp['name'] = stock
+        
         if len(stock_df_temp) < 100:
             continue  # Skip short histories
         
@@ -135,7 +159,6 @@ if 'recommendations' not in st.session_state:
         
         # Ichimoku signals
         cloud_top = max(senkou_a.iloc[-1], senkou_b.iloc[-1])
-        cloud_bottom = min(senkou_a.iloc[-1], senkou_b.iloc[-1])
         if current_price > cloud_top:
             score += 1
             reasons.append("Price above Ichimoku Cloud - Strong bullish trend")
@@ -234,23 +257,47 @@ with st.sidebar:
     selected_stock = st.selectbox('Stock', stocks)
 
 # Filter data for selected stock
-stock_df = df[df['name'] == selected_stock].set_index('Date').sort_index()
+if selected_stock in csv_stocks:
+    stock_df = df[df['name'] == selected_stock].set_index('Date').sort_index()
+else:
+    ticker = ticker_map.get(selected_stock, selected_stock + '.MA')
+    stock_df = yf.download(ticker, period='2y')
+    if stock_df.empty:
+        stock_df = pd.DataFrame()
+    else:
+        stock_df['name'] = selected_stock
+
+# Initial portfolio data
+initial_portfolio = {
+    'TGCC': {'quantity': 21, 'entry_price': 840.66},
+    'ITISSALAT AL MAGHRIB': {'quantity': 31, 'entry_price': 115.93},
+    'AKDITAL': {'quantity': 20, 'entry_price': 1501.32},
+    'MARSA MAROC': {'quantity': 4, 'entry_price': 988.94},
+    'AFRIQUIA GAZ': {'quantity': 6, 'entry_price': 485.85},
+    'SONASID': {'quantity': 2, 'entry_price': 1180.75},
+    'JET CONTRACTORS': {'quantity': 4, 'entry_price': 2540.83},
+    'CMGP GROUP': {'quantity': 1, 'entry_price': 428.26},
+}
 
 # Initialize portfolio in session state
 if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = {}  # {stock: {'quantity': q, 'entry_price': p}}
+    st.session_state.portfolio = initial_portfolio
 
 # Main content with columns for modern layout
 col1, col2 = st.columns([3, 1])
 
 with col2:
-    st.metric("Current Price", f"{stock_df['Close'].iloc[-1]:.2f}")
-    st.metric("52-Week High", f"{stock_df['High'].max():.2f}")
-    st.metric("52-Week Low", f"{stock_df['Low'].min():.2f}")
+    if not stock_df.empty:
+        st.metric("Current Price", f"{stock_df['Close'].iloc[-1]:.2f}")
+        st.metric("52-Week High", f"{stock_df['High'].max():.2f}")
+        st.metric("52-Week Low", f"{stock_df['Low'].min():.2f}")
+    else:
+        st.write("No data available for this stock.")
 
 with col1:
     if selected_tab == 'Recommendations':
         st.header("Top 5 Stocks to Buy")
+        st.write("Note: These recommendations are based on technical indicators and historical data. They are not financial advice. Reliability is estimated by the probability score, but markets are volatile. Always do your own research.")
         
         # Simulation inputs
         st.subheader("Investment Simulation")
@@ -299,7 +346,7 @@ with col1:
         with st.form(key='add_portfolio'):
             add_stock = st.selectbox("Select Stock to Add", stocks)
             quantity = st.number_input("Quantity", min_value=1, value=1)
-            entry_price = st.number_input("Entry Price", min_value=0.0, value=stock_df['Close'].iloc[-1])
+            entry_price = st.number_input("Entry Price", min_value=0.0, value=stock_df['Close'].iloc[-1] if not stock_df.empty else 0.0)
             submit = st.form_submit_button("Add to Portfolio")
             if submit:
                 st.session_state.portfolio[add_stock] = {'quantity': quantity, 'entry_price': entry_price}
@@ -311,9 +358,15 @@ with col1:
             broker_fee_pct_port = st.number_input("Broker Fee for Portfolio (%)", min_value=0.0, max_value=10.0, value=0.5, key='port_fee')
             tax_pct_port = st.number_input("Tax on Gains for Portfolio (%)", min_value=0.0, max_value=50.0, value=15.0, key='port_tax')
             
-            for stock, info in st.session_state.portfolio.items():
-                stock_df_port = df[df['name'] == stock].set_index('Date').sort_index()
-                current_price = stock_df_port['Close'].iloc[-1]
+            for stock, info in list(st.session_state.portfolio.items()):
+                if stock in csv_stocks:
+                    stock_df_port = df[df['name'] == stock].set_index('Date').sort_index()
+                    current_price = stock_df_port['Close'].iloc[-1]
+                else:
+                    ticker = ticker_map.get(stock, stock + '.MA')
+                    yf_ticker = yf.Ticker(ticker)
+                    current_price = yf_ticker.info.get('currentPrice', 0)
+                
                 value = current_price * info['quantity']
                 entry_value = info['entry_price'] * info['quantity']
                 gross_gain = value - entry_value
@@ -350,6 +403,19 @@ with col1:
             port_df = pd.DataFrame(portfolio_data)
             st.dataframe(port_df, use_container_width=True)
             st.metric("Total Net Portfolio Gain/Loss", f"{total_gain:.2f}")
+            
+            # Modify or delete
+            modify_stock = st.selectbox("Select Stock to Modify/Delete", list(st.session_state.portfolio.keys()))
+            if modify_stock:
+                with st.form(key='modify_portfolio'):
+                    new_quantity = st.number_input("New Quantity", min_value=1, value=st.session_state.portfolio[modify_stock]['quantity'])
+                    new_entry_price = st.number_input("New Entry Price", min_value=0.0, value=st.session_state.portfolio[modify_stock]['entry_price'])
+                    submit_modify = st.form_submit_button("Modify")
+                    if submit_modify:
+                        st.session_state.portfolio[modify_stock] = {'quantity': new_quantity, 'entry_price': new_entry_price}
+                    submit_delete = st.form_submit_button("Delete")
+                    if submit_delete:
+                        del st.session_state.portfolio[modify_stock]
         else:
             st.write("No stocks in portfolio yet.")
 
