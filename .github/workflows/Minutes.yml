@@ -2,7 +2,7 @@ name: Update Stocks CSV Every Hour (Weekdays)
 
 on:
   schedule:
-    -cron: "30 8 * * 1-5"  # 09:30 Morocco time, Monday–Friday
+    -cron: "0 8-18/2 * * 1-5
   workflow_dispatch:
 
 permissions:
