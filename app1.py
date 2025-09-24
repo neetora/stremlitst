@@ -227,7 +227,7 @@ with st.sidebar:
         'MACD',
         'RSI',
         'Ichimoku Cloud',
-        'Canal Haussier',
+        'Bollinger Bands',
         'Machine Learning Models'
     ])
     st.markdown("### Select Stock for Details")
@@ -478,60 +478,40 @@ with col1:
         else:
             st.write("Insufficient data for Ichimoku analysis.")
 
-    elif selected_tab == 'Canal Haussier':
-        st.header("Canal Haussier (Bullish Channel)")
-        st.write("**Meaning:** A bullish channel is a price pattern where the stock moves upward between two parallel trend lines. The lower line is support, the upper is resistance. Staying within the channel suggests continued uptrend; breakouts can signal acceleration or reversal.")
-        if len(stock_df) < 50:
-            st.write("Insufficient data for channel analysis.")
+    elif selected_tab == 'Bollinger Bands':
+        st.header("Bollinger Bands")
+        st.write("**Meaning:** Volatility indicator with middle band (20-period SMA) and upper/lower bands (+/- 2 std devs). Price at upper band = overbought, lower = oversold. Band squeeze predicts volatility breakout.")
+        if len(stock_df) < 20:
+            st.write("Insufficient data for Bollinger Bands.")
         else:
-            # Compute bullish channel using linear regression on highs and lows
-            recent_df = stock_df.tail(100).copy()
-            recent_df['Day'] = np.arange(len(recent_df))
-            
-            # Upper channel: Regression on highs
-            highs = recent_df[recent_df['Close'] == recent_df['High']]
-            if len(highs) > 2:
-                model_upper = LinearRegression()
-                model_upper.fit(highs[['Day']], highs['High'])
-                upper_slope = model_upper.coef_[0]
-                upper_intercept = model_upper.intercept_
-                recent_df['Upper Channel'] = upper_intercept + upper_slope * recent_df['Day']
-            else:
-                recent_df['Upper Channel'] = np.nan
-            
-            # Lower channel: Regression on lows
-            lows = recent_df[recent_df['Close'] == recent_df['Low']]
-            if len(lows) > 2:
-                model_lower = LinearRegression()
-                model_lower.fit(lows[['Day']], lows['Low'])
-                lower_slope = model_lower.coef_[0]
-                lower_intercept = model_lower.intercept_
-                recent_df['Lower Channel'] = lower_intercept + lower_slope * recent_df['Day']
-            else:
-                recent_df['Lower Channel'] = np.nan
-            
-            # Check if channel is bullish (positive slope)
-            is_bullish = (upper_slope > 0) and (lower_slope > 0) and abs(upper_slope - lower_slope) < 0.1 * abs(upper_slope)  # Parallel check
+            period = 20
+            std_dev = 2
+            ma = stock_df['Close'].rolling(window=period).mean()
+            std = stock_df['Close'].rolling(window=period).std()
+            upper_band = ma + std_dev * std
+            lower_band = ma - std_dev * std
             
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Close'], mode='lines', name='Close Price'))
-            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Upper Channel'], mode='lines', name='Upper Channel', line=dict(dash='dash')))
-            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Lower Channel'], mode='lines', name='Lower Channel', line=dict(dash='dash')))
-            fig.update_layout(title='Bullish Channel Analysis', xaxis_title='Date', yaxis_title='Price')
+            fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df['Close'], mode='lines', name='Close Price'))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=upper_band, mode='lines', name='Upper Band'))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=ma, mode='lines', name='Middle Band (SMA)'))
+            fig.add_trace(go.Scatter(x=stock_df.index, y=lower_band, mode='lines', name='Lower Band'))
+            fig.update_layout(title='Bollinger Bands', xaxis_title='Date', yaxis_title='Price')
             st.plotly_chart(fig, use_container_width=True)
             
-            if is_bullish:
-                st.write("**Results:** Bullish channel detected. Price is trending upward within parallel lines.")
-                st.write(f"Upper Channel Slope: {upper_slope:.4f}")
-                st.write(f"Lower Channel Slope: {lower_slope:.4f}")
-                st.write("Recommendation: Buy on dips to lower channel, sell near upper. Watch for breakout.")
+            st.write("Current Upper Band:", upper_band.iloc[-1])
+            st.write("Current Middle Band:", ma.iloc[-1])
+            st.write("Current Lower Band:", lower_band.iloc[-1])
+            bandwidth = (upper_band.iloc[-1] - lower_band.iloc[-1]) / ma.iloc[-1]
+            st.write("Bandwidth (Volatility Measure):", bandwidth)
+            if bandwidth < 0.05:
+                st.write("Status: Volatility Squeeze - Potential Breakout")
+            elif stock_df['Close'].iloc[-1] > upper_band.iloc[-1]:
+                st.write("Status: Overbought - Potential Pullback")
+            elif stock_df['Close'].iloc[-1] < lower_band.iloc[-1]:
+                st.write("Status: Oversold - Potential Rebound")
             else:
-                st.write("**Results:** No clear bullish channel detected. Slopes may not be positive or parallel.")
-            
-            # All results: Display channel values
-            st.write("Recent Channel Values:")
-            channel_df = recent_df[['Close', 'Upper Channel', 'Lower Channel']].tail(10)
-            st.dataframe(channel_df)
+                st.write("Status: Neutral")
 
     elif selected_tab == 'Machine Learning Models':
         st.header("Machine Learning Models")
