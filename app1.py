@@ -10,7 +10,6 @@ import torch.optim as optim
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
-import yfinance as yf
 
 # Modern UI/UX: Set page config for wide layout and theme
 st.set_page_config(page_title="Advanced Stock Analyzer", layout="wide", initial_sidebar_state="expanded")
@@ -18,23 +17,8 @@ st.set_page_config(page_title="Advanced Stock Analyzer", layout="wide", initial_
 # Load the data
 df = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
 
-# Unique stocks from CSV
-csv_stocks = df['name'].unique()
-
-# Ticker map for user's portfolio stocks
-ticker_map = {
-    'TGCC': 'TGC.MA',
-    'ITISSALAT AL MAGHRIB': 'IAM.MA',
-    'AKDITAL': 'AKT.MA',
-    'MARSA MAROC': 'MSA.MA',
-    'AFRIQUIA GAZ': 'GAZ.MA',
-    'SONASID': 'SID.MA',
-    'JET CONTRACTORS': 'JET.MA',
-    'CMGP GROUP': 'CMG.MA'
-}
-
-# All stocks: CSV + user's possible
-stocks = list(set(list(csv_stocks) + list(ticker_map.keys())))
+# Unique stocks
+stocks = df['name'].unique()
 
 # Compute recommendations in background with enhanced math (weighted scores and probability-like normalization)
 # Improved: Added support/resistance checks, Fibonacci signals, and now Ichimoku for more reliability
@@ -42,15 +26,7 @@ stocks = list(set(list(csv_stocks) + list(ticker_map.keys())))
 if 'recommendations' not in st.session_state:
     recos = {}
     for stock in stocks:
-        if stock in csv_stocks:
-            stock_df_temp = df[df['name'] == stock].set_index('Date').sort_index()
-        else:
-            ticker = ticker_map.get(stock, stock + '.MA')
-            stock_df_temp = yf.download(ticker, period='2y')
-            if stock_df_temp.empty:
-                continue
-            stock_df_temp['name'] = stock
-        
+        stock_df_temp = df[df['name'] == stock].set_index('Date').sort_index()
         if len(stock_df_temp) < 100:
             continue  # Skip short histories
         
@@ -159,6 +135,7 @@ if 'recommendations' not in st.session_state:
         
         # Ichimoku signals
         cloud_top = max(senkou_a.iloc[-1], senkou_b.iloc[-1])
+        cloud_bottom = min(senkou_a.iloc[-1], senkou_b.iloc[-1])
         if current_price > cloud_top:
             score += 1
             reasons.append("Price above Ichimoku Cloud - Strong bullish trend")
@@ -214,43 +191,6 @@ if 'recommendations' not in st.session_state:
         expected_reward = atr * 2  # 2:1 risk-reward ratio
         swing_strategies.append(f"Risk Management: Stop loss at {stop_loss:.2f} (1x ATR below). Target reward: +{expected_reward:.2f} (2:1 ratio).")
         
-        # New: Bullish Channel detection
-        # Fit upper and lower trendlines using linear regression on recent highs/lows
-        recent_df_channel = stock_df_temp.tail(100).copy()
-        recent_df_channel['Day'] = np.arange(len(recent_df_channel))
-        
-        # Highs for upper channel
-        high_max_idx = argrelextrema(recent_df_channel['High'].values, np.greater, order=5)[0]
-        if len(high_max_idx) >= 2:
-            high_days = recent_df_channel['Day'].iloc[high_max_idx]
-            high_prices = recent_df_channel['High'].iloc[high_max_idx]
-            model_upper = LinearRegression()
-            model_upper.fit(high_days.values.reshape(-1, 1), high_prices)
-            upper_slope = model_upper.coef_[0]
-            upper_intercept = model_upper.predict([[len(recent_df_channel) - 1]])[0]
-        else:
-            upper_slope = 0
-            upper_intercept = 0
-        
-        # Lows for lower channel
-        low_min_idx = argrelextrema(recent_df_channel['Low'].values, np.less, order=5)[0]
-        if len(low_min_idx) >= 2:
-            low_days = recent_df_channel['Day'].iloc[low_min_idx]
-            low_prices = recent_df_channel['Low'].iloc[low_min_idx]
-            model_lower = LinearRegression()
-            model_lower.fit(low_days.values.reshape(-1, 1), low_prices)
-            lower_slope = model_lower.coef_[0]
-            lower_intercept = model_lower.predict([[len(recent_df_channel) - 1]])[0]
-        else:
-            lower_slope = 0
-            lower_intercept = 0
-        
-        is_bullish_channel = upper_slope > 0 and lower_slope > 0 and abs(upper_slope - lower_slope) / ((upper_slope + lower_slope)/2) < 0.2  # Roughly parallel and positive
-        
-        if is_bullish_channel:
-            score += 1
-            reasons.append("In Bullish Channel - Upward trend with parallel support/resistance")
-        
         recos[stock] = {
             'score': score, 
             'prob': prob, 
@@ -260,15 +200,7 @@ if 'recommendations' not in st.session_state:
             'current_price': current_price,
             'stock_df': stock_df_temp,  # Store df for plotting
             'ichimoku': (tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span),  # Store for tab
-            'swing_strategies': swing_strategies,  # New
-            'bullish_channel': {
-                'is_bullish': is_bullish_channel,
-                'upper_slope': upper_slope,
-                'upper_intercept': upper_intercept,
-                'lower_slope': lower_slope,
-                'lower_intercept': lower_intercept,
-                'channel_df': recent_df_channel
-            }  # New for channel
+            'swing_strategies': swing_strategies  # New
         }
     
     # Get top 5
@@ -282,7 +214,6 @@ with st.sidebar:
     st.markdown("### Navigation")
     selected_tab = st.radio("Go to", [
         'Recommendations',
-        'Portfolio Management',
         'All Stocks Analysis',
         'Discounted Cash Flow (DCF)',
         'Earnings-Based Valuation',
@@ -296,54 +227,26 @@ with st.sidebar:
         'MACD',
         'RSI',
         'Ichimoku Cloud',
-        'Bullish Channel',
+        'Canal Haussier',
         'Machine Learning Models'
     ])
     st.markdown("### Select Stock for Details")
     selected_stock = st.selectbox('Stock', stocks)
 
 # Filter data for selected stock
-if selected_stock in csv_stocks:
-    stock_df = df[df['name'] == selected_stock].set_index('Date').sort_index()
-else:
-    ticker = ticker_map.get(selected_stock, selected_stock + '.MA')
-    stock_df = yf.download(ticker, period='2y')
-    if stock_df.empty:
-        stock_df = pd.DataFrame()
-    else:
-        stock_df['name'] = selected_stock
-
-# Initial portfolio data
-initial_portfolio = {
-    'TGCC': {'quantity': 21, 'entry_price': 840.66},
-    'ITISSALAT AL MAGHRIB': {'quantity': 31, 'entry_price': 115.93},
-    'AKDITAL': {'quantity': 20, 'entry_price': 1501.32},
-    'MARSA MAROC': {'quantity': 4, 'entry_price': 988.94},
-    'AFRIQUIA GAZ': {'quantity': 6, 'entry_price': 485.85},
-    'SONASID': {'quantity': 2, 'entry_price': 1180.75},
-    'JET CONTRACTORS': {'quantity': 4, 'entry_price': 2540.83},
-    'CMGP GROUP': {'quantity': 1, 'entry_price': 428.26},
-}
-
-# Initialize portfolio in session state
-if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = initial_portfolio
+stock_df = df[df['name'] == selected_stock].set_index('Date').sort_index()
 
 # Main content with columns for modern layout
 col1, col2 = st.columns([3, 1])
 
 with col2:
-    if not stock_df.empty:
-        st.metric("Current Price", f"{stock_df['Close'].iloc[-1]:.2f}")
-        st.metric("52-Week High", f"{stock_df['High'].max():.2f}")
-        st.metric("52-Week Low", f"{stock_df['Low'].min():.2f}")
-    else:
-        st.write("No data available for this stock.")
+    st.metric("Current Price", f"{stock_df['Close'].iloc[-1]:.2f}")
+    st.metric("52-Week High", f"{stock_df['High'].max():.2f}")
+    st.metric("52-Week Low", f"{stock_df['Low'].min():.2f}")
 
 with col1:
     if selected_tab == 'Recommendations':
         st.header("Top 5 Stocks to Buy")
-        st.write("Note: These recommendations are based on technical indicators and historical data. They are not financial advice. Reliability is estimated by the probability score, but markets are volatile. Always do your own research.")
         
         # Simulation inputs
         st.subheader("Investment Simulation")
@@ -383,87 +286,6 @@ with col1:
                     fig.add_hline(y=tgt_price, line_dash="dash", line_color="green", annotation_text=f"Target {tgt_price:.2f}")
                 fig.update_layout(title=f'Price Projection for {stock}', xaxis_title='Date', yaxis_title='Price', height=300)
                 st.plotly_chart(fig, use_container_width=True)
-
-    elif selected_tab == 'Portfolio Management':
-        st.header("Portfolio Management")
-        st.write("**Meaning:** Track your holdings, calculate gains/losses, and get recommendations based on analysis.")
-        
-        # Form to add stock to portfolio
-        with st.form(key='add_portfolio'):
-            add_stock = st.selectbox("Select Stock to Add", stocks)
-            quantity = st.number_input("Quantity", min_value=1, value=1)
-            entry_price = st.number_input("Entry Price", min_value=0.0, value=stock_df['Close'].iloc[-1] if not stock_df.empty else 0.0)
-            submit = st.form_submit_button("Add to Portfolio")
-            if submit:
-                st.session_state.portfolio[add_stock] = {'quantity': quantity, 'entry_price': entry_price}
-        
-        if st.session_state.portfolio:
-            st.subheader("Your Portfolio")
-            portfolio_data = []
-            total_gain = 0
-            broker_fee_pct_port = st.number_input("Broker Fee for Portfolio (%)", min_value=0.0, max_value=10.0, value=0.5, key='port_fee')
-            tax_pct_port = st.number_input("Tax on Gains for Portfolio (%)", min_value=0.0, max_value=50.0, value=15.0, key='port_tax')
-            
-            for stock, info in list(st.session_state.portfolio.items()):
-                if stock in csv_stocks:
-                    stock_df_port = df[df['name'] == stock].set_index('Date').sort_index()
-                    current_price = stock_df_port['Close'].iloc[-1]
-                else:
-                    ticker = ticker_map.get(stock, stock + '.MA')
-                    yf_ticker = yf.Ticker(ticker)
-                    current_price = yf_ticker.info.get('currentPrice', 0)
-                
-                value = current_price * info['quantity']
-                entry_value = info['entry_price'] * info['quantity']
-                gross_gain = value - entry_value
-                broker_fee = entry_value * (broker_fee_pct_port / 100)
-                tax = max(0, gross_gain - broker_fee) * (tax_pct_port / 100)
-                net_gain = gross_gain - broker_fee - tax
-                total_gain += net_gain
-                
-                # Recommendation
-                if stock in st.session_state.all_recos:
-                    reco = st.session_state.all_recos[stock]
-                    if reco['prob'] > 70:
-                        rec = "Buy More (High Probability Uptrend)"
-                    elif reco['prob'] < 30:
-                        rec = "Sell (Potential Downtrend)"
-                    else:
-                        rec = "Hold (Neutral)"
-                    proj = f"Target 1: {reco['targets']['Target 1 (1.5x ATR)']:.2f} in {reco['days_estimates']['Target 1 (1.5x ATR)']} days"
-                else:
-                    rec = "No Data"
-                    proj = "N/A"
-                
-                portfolio_data.append({
-                    'Stock': stock,
-                    'Quantity': info['quantity'],
-                    'Entry Price': info['entry_price'],
-                    'Current Price': current_price,
-                    'Gross Gain/Loss': gross_gain,
-                    'Net Gain/Loss': net_gain,
-                    'Recommendation': rec,
-                    'Projection': proj
-                })
-            
-            port_df = pd.DataFrame(portfolio_data)
-            st.dataframe(port_df, use_container_width=True)
-            st.metric("Total Net Portfolio Gain/Loss", f"{total_gain:.2f}")
-            
-            # Modify or delete
-            modify_stock = st.selectbox("Select Stock to Modify/Delete", list(st.session_state.portfolio.keys()))
-            if modify_stock:
-                with st.form(key='modify_portfolio'):
-                    new_quantity = st.number_input("New Quantity", min_value=1, value=st.session_state.portfolio[modify_stock]['quantity'])
-                    new_entry_price = st.number_input("New Entry Price", min_value=0.0, value=st.session_state.portfolio[modify_stock]['entry_price'])
-                    submit_modify = st.form_submit_button("Modify")
-                    if submit_modify:
-                        st.session_state.portfolio[modify_stock] = {'quantity': new_quantity, 'entry_price': new_entry_price}
-                    submit_delete = st.form_submit_button("Delete")
-                    if submit_delete:
-                        del st.session_state.portfolio[modify_stock]
-        else:
-            st.write("No stocks in portfolio yet.")
 
     elif selected_tab == 'All Stocks Analysis':
         st.header("Full Analysis of All Stocks")
@@ -656,28 +478,60 @@ with col1:
         else:
             st.write("Insufficient data for Ichimoku analysis.")
 
-    elif selected_tab == 'Bullish Channel':
-        st.header("Bullish Channel")
-        st.write("**Meaning:** Upward trend between parallel lines. Price bouncing off lower line (support) and testing upper (resistance) indicates bullish continuation.")
-        if selected_stock in st.session_state.all_recos:
-            data = st.session_state.all_recos[selected_stock]
-            channel = data['bullish_channel']
-            if channel['is_bullish']:
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=channel['channel_df'].index, y=channel['channel_df']['Close'], mode='lines', name='Close'))
-                # Upper channel line
-                upper_line = channel['upper_slope'] * channel['channel_df']['Day'] + (channel['upper_intercept'] - channel['upper_slope'] * (len(channel['channel_df']) - 1))
-                fig.add_trace(go.Scatter(x=channel['channel_df'].index, y=upper_line, mode='lines', name='Upper Channel', line=dict(dash='dash')))
-                # Lower channel line
-                lower_line = channel['lower_slope'] * channel['channel_df']['Day'] + (channel['lower_intercept'] - channel['lower_slope'] * (len(channel['channel_df']) - 1))
-                fig.add_trace(go.Scatter(x=channel['channel_df'].index, y=lower_line, mode='lines', name='Lower Channel', line=dict(dash='dash')))
-                fig.update_layout(title='Bullish Channel', xaxis_title='Date', yaxis_title='Price')
-                st.plotly_chart(fig, use_container_width=True)
-                st.write("Status: In Bullish Channel")
-            else:
-                st.write("Status: Not in Bullish Channel")
+    elif selected_tab == 'Canal Haussier':
+        st.header("Canal Haussier (Bullish Channel)")
+        st.write("**Meaning:** A bullish channel is a price pattern where the stock moves upward between two parallel trend lines. The lower line is support, the upper is resistance. Staying within the channel suggests continued uptrend; breakouts can signal acceleration or reversal.")
+        if len(stock_df) < 50:
+            st.write("Insufficient data for channel analysis.")
         else:
-            st.write("Insufficient data for Bullish Channel analysis.")
+            # Compute bullish channel using linear regression on highs and lows
+            recent_df = stock_df.tail(100).copy()
+            recent_df['Day'] = np.arange(len(recent_df))
+            
+            # Upper channel: Regression on highs
+            highs = recent_df[recent_df['Close'] == recent_df['High']]
+            if len(highs) > 2:
+                model_upper = LinearRegression()
+                model_upper.fit(highs[['Day']], highs['High'])
+                upper_slope = model_upper.coef_[0]
+                upper_intercept = model_upper.intercept_
+                recent_df['Upper Channel'] = upper_intercept + upper_slope * recent_df['Day']
+            else:
+                recent_df['Upper Channel'] = np.nan
+            
+            # Lower channel: Regression on lows
+            lows = recent_df[recent_df['Close'] == recent_df['Low']]
+            if len(lows) > 2:
+                model_lower = LinearRegression()
+                model_lower.fit(lows[['Day']], lows['Low'])
+                lower_slope = model_lower.coef_[0]
+                lower_intercept = model_lower.intercept_
+                recent_df['Lower Channel'] = lower_intercept + lower_slope * recent_df['Day']
+            else:
+                recent_df['Lower Channel'] = np.nan
+            
+            # Check if channel is bullish (positive slope)
+            is_bullish = (upper_slope > 0) and (lower_slope > 0) and abs(upper_slope - lower_slope) < 0.1 * abs(upper_slope)  # Parallel check
+            
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Close'], mode='lines', name='Close Price'))
+            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Upper Channel'], mode='lines', name='Upper Channel', line=dict(dash='dash')))
+            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Lower Channel'], mode='lines', name='Lower Channel', line=dict(dash='dash')))
+            fig.update_layout(title='Bullish Channel Analysis', xaxis_title='Date', yaxis_title='Price')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            if is_bullish:
+                st.write("**Results:** Bullish channel detected. Price is trending upward within parallel lines.")
+                st.write(f"Upper Channel Slope: {upper_slope:.4f}")
+                st.write(f"Lower Channel Slope: {lower_slope:.4f}")
+                st.write("Recommendation: Buy on dips to lower channel, sell near upper. Watch for breakout.")
+            else:
+                st.write("**Results:** No clear bullish channel detected. Slopes may not be positive or parallel.")
+            
+            # All results: Display channel values
+            st.write("Recent Channel Values:")
+            channel_df = recent_df[['Close', 'Upper Channel', 'Lower Channel']].tail(10)
+            st.dataframe(channel_df)
 
     elif selected_tab == 'Machine Learning Models':
         st.header("Machine Learning Models")
