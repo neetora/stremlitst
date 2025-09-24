@@ -94,10 +94,20 @@ if 'recommendations' not in st.session_state:
         
         tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span = compute_ichimoku(stock_df_temp)
         
+        # New: Bollinger Bands
+        def compute_bollinger_bands(series, period=20, std_dev=2):
+            sma = series.rolling(window=period).mean()
+            std = series.rolling(window=period).std()
+            upper_band = sma + (std * std_dev)
+            lower_band = sma - (std * std_dev)
+            return upper_band, sma, lower_band
+        
+        upper_bb, middle_bb, lower_bb = compute_bollinger_bands(stock_df_temp['Close'])
+        
         # Enhanced scoring: Increased max_score for new signals
         score = 0
         reasons = []
-        max_score = 12  # Increased for Ichimoku
+        max_score = 13  # Increased for Bollinger Bands
         
         current_price = stock_df_temp['Close'].iloc[-1]
         current_rsi = rsi.iloc[-1]
@@ -142,6 +152,11 @@ if 'recommendations' not in st.session_state:
         if tenkan_sen.iloc[-1] > kijun_sen.iloc[-1]:
             score += 1
             reasons.append("Tenkan-sen above Kijun-sen - Bullish momentum")
+        
+        # New: Bollinger Bands signal
+        if current_price <= lower_bb.iloc[-1] and rsi.iloc[-1] < 50:
+            score += 1
+            reasons.append("Price near lower Bollinger Band with low RSI - Oversold bounce potential")
         
         # Math enhancement: Normalize to percentage
         prob = (score / max_score) * 100
@@ -200,6 +215,7 @@ if 'recommendations' not in st.session_state:
             'current_price': current_price,
             'stock_df': stock_df_temp,  # Store df for plotting
             'ichimoku': (tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span),  # Store for tab
+            'bollinger': (upper_bb, middle_bb, lower_bb),  # Store for BB tab
             'swing_strategies': swing_strategies  # New
         }
     
@@ -227,7 +243,7 @@ with st.sidebar:
         'MACD',
         'RSI',
         'Ichimoku Cloud',
-        'Canal Haussier',
+        'Bollinger Bands',
         'Machine Learning Models'
     ])
     st.markdown("### Select Stock for Details")
@@ -340,253 +356,4 @@ with col1:
 
     elif selected_tab == 'Support & Resistance':
         st.header("Support & Resistance")
-        st.write("**Meaning:** Support is a floor price (buyers enter); resistance is a ceiling (sellers enter). Breaks can signal trends.")
-        close = stock_df['Close'].values
-        max_idx = argrelextrema(close, np.greater, order=5)[0]
-        min_idx = argrelextrema(close, np.less, order=5)[0]
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df['Close'], mode='lines', name='Close Price'))
-        fig.add_trace(go.Scatter(x=stock_df.index[max_idx], y=stock_df['Close'].iloc[max_idx], mode='markers', marker=dict(color='red'), name='Resistance'))
-        fig.add_trace(go.Scatter(x=stock_df.index[min_idx], y=stock_df['Close'].iloc[min_idx], mode='markers', marker=dict(color='green'), name='Support'))
-        fig.update_layout(title='Support and Resistance', xaxis_title='Date', yaxis_title='Price')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write("Key Supports:", stock_df['Close'].iloc[min_idx].tolist())
-        st.write("Key Resistances:", stock_df['Close'].iloc[max_idx].tolist())
-        
-        # Add Possible Targets and Prediction Days
-        if selected_stock in st.session_state.all_recos:
-            data = st.session_state.all_recos[selected_stock]
-            st.subheader("Possible Targets (Volatility-Based)")
-            for tgt_name, tgt_price in data['targets'].items():
-                st.write(f"- {tgt_name}: {tgt_price:.2f}")
-                est_days = data['days_estimates'][tgt_name]
-                st.write(f"  Estimated Days to Reach (Trend-Based): {est_days}")
-
-    elif selected_tab == 'Fibonacci Retracement':
-        st.header("Fibonacci Retracement")
-        st.write("**Meaning:** Mathematical ratios (e.g., 61.8%) predict reversal levels. Pullbacks to these can be buy opportunities in uptrends.")
-        recent_df = stock_df.tail(100)
-        high = recent_df['High'].max()
-        low = recent_df['Low'].min()
-        diff = high - low
-        levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]
-        fib_levels = [high - level * diff for level in levels]
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df['Close'], mode='lines', name='Close Price'))
-        for lvl, fib in zip(levels, fib_levels):
-            fig.add_hline(y=fib, line_dash="dash", line_color="orange", annotation_text=f"{lvl*100:.1f}%")
-        fig.update_layout(title='Fibonacci Levels', xaxis_title='Date', yaxis_title='Price')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write("Fibonacci Levels:", {f'{levels[i]*100}%': fib_levels[i] for i in range(len(levels))})
-
-    elif selected_tab == 'Moving Averages':
-        st.header("Moving Averages")
-        st.write("**Meaning:** Averages smooth price data. Crossovers (e.g., short MA above long) signal trends; golden cross is bullish.")
-        sma_20 = stock_df['Close'].rolling(window=20).mean()
-        ema_20 = stock_df['Close'].ewm(span=20, adjust=False).mean()
-        sma_50 = stock_df['Close'].rolling(window=50).mean()
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df['Close'], mode='lines', name='Close'))
-        fig.add_trace(go.Scatter(x=stock_df.index, y=sma_20, mode='lines', name='SMA 20'))
-        fig.add_trace(go.Scatter(x=stock_df.index, y=ema_20, mode='lines', name='EMA 20'))
-        fig.add_trace(go.Scatter(x=stock_df.index, y=sma_50, mode='lines', name='SMA 50'))
-        fig.update_layout(title='Moving Averages', xaxis_title='Date', yaxis_title='Price')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write("Current SMA 20:", sma_20.iloc[-1])
-        st.write("Current EMA 20:", ema_20.iloc[-1])
-        st.write("Current SMA 50:", sma_50.iloc[-1])
-
-    elif selected_tab == 'MACD':
-        st.header("MACD")
-        st.write("**Meaning:** Measures momentum. Line above signal is bullish; divergences predict reversals.")
-        def compute_macd(series, fast=12, slow=26, signal=9):
-            ema_fast = series.ewm(span=fast, adjust=False).mean()
-            ema_slow = series.ewm(span=slow, adjust=False).mean()
-            macd_line = ema_fast - ema_slow
-            signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-            histogram = macd_line - signal_line
-            return macd_line, signal_line, histogram
-        
-        macd_line, signal_line, histogram = compute_macd(stock_df['Close'])
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=stock_df.index, y=macd_line, mode='lines', name='MACD Line'))
-        fig.add_trace(go.Scatter(x=stock_df.index, y=signal_line, mode='lines', name='Signal Line'))
-        fig.add_trace(go.Bar(x=stock_df.index, y=histogram, name='Histogram', marker_color='gray'))
-        fig.update_layout(title='MACD', xaxis_title='Date')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write("Current MACD:", macd_line.iloc[-1])
-        st.write("Current Signal:", signal_line.iloc[-1])
-
-    elif selected_tab == 'RSI':
-        st.header("RSI")
-        st.write("**Meaning:** Momentum oscillator; <30 oversold (buy), >70 overbought (sell). Divergences signal reversals.")
-        def compute_rsi(series, period=14):
-            delta = series.diff(1)
-            gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-            loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        
-        rsi = compute_rsi(stock_df['Close'])
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=stock_df.index, y=rsi, mode='lines', name='RSI'))
-        fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
-        fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
-        fig.update_layout(title='RSI', xaxis_title='Date', yaxis_title='RSI Value')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.write("Current RSI:", rsi.iloc[-1])
-        if rsi.iloc[-1] > 70:
-            st.write("Status: Overbought")
-        elif rsi.iloc[-1] < 30:
-            st.write("Status: Oversold")
-        else:
-            st.write("Status: Neutral")
-
-    elif selected_tab == 'Ichimoku Cloud':
-        st.header("Ichimoku Cloud")
-        st.write("**Meaning:** Trend indicator; price above cloud is bullish, crossovers signal momentum, cloud acts as support/resistance.")
-        if selected_stock in st.session_state.all_recos:
-            data = st.session_state.all_recos[selected_stock]
-            tenkan_sen, kijun_sen, senkou_a, senkou_b, chikou_span = data['ichimoku']
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=stock_df.index, y=stock_df['Close'], mode='lines', name='Close Price'))
-            fig.add_trace(go.Scatter(x=stock_df.index, y=tenkan_sen, mode='lines', name='Tenkan-sen'))
-            fig.add_trace(go.Scatter(x=stock_df.index, y=kijun_sen, mode='lines', name='Kijun-sen'))
-            fig.add_trace(go.Scatter(x=stock_df.index, y=senkou_a, mode='lines', name='Senkou Span A', fill=None))
-            fig.add_trace(go.Scatter(x=stock_df.index, y=senkou_b, mode='lines', name='Senkou Span B', fill='tonexty', fillcolor='rgba(0,255,0,0.1)' if senkou_a.iloc[-1] > senkou_b.iloc[-1] else 'rgba(255,0,0,0.1)'))
-            fig.add_trace(go.Scatter(x=stock_df.index, y=chikou_span, mode='lines', name='Chikou Span'))
-            fig.update_layout(title='Ichimoku Cloud', xaxis_title='Date', yaxis_title='Price')
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.write("Current Tenkan-sen:", tenkan_sen.iloc[-1])
-            st.write("Current Kijun-sen:", kijun_sen.iloc[-1])
-            st.write("Current Senkou Span A:", senkou_a.iloc[-1])
-            st.write("Current Senkou Span B:", senkou_b.iloc[-1])
-            st.write("Current Chikou Span:", chikou_span.iloc[-1])
-        else:
-            st.write("Insufficient data for Ichimoku analysis.")
-
-    elif selected_tab == 'Canal Haussier':
-        st.header("Canal Haussier (Bullish Channel)")
-        st.write("**Meaning:** A bullish channel is a price pattern where the stock moves upward between two parallel trend lines. The lower line is support, the upper is resistance. Staying within the channel suggests continued uptrend; breakouts can signal acceleration or reversal.")
-        if len(stock_df) < 50:
-            st.write("Insufficient data for channel analysis.")
-        else:
-            # Compute bullish channel using linear regression on highs and lows
-            recent_df = stock_df.tail(100).copy()
-            recent_df['Day'] = np.arange(len(recent_df))
-            
-            # Upper channel: Regression on highs
-            highs = recent_df[recent_df['Close'] == recent_df['High']]
-            if len(highs) > 2:
-                model_upper = LinearRegression()
-                model_upper.fit(highs[['Day']], highs['High'])
-                upper_slope = model_upper.coef_[0]
-                upper_intercept = model_upper.intercept_
-                recent_df['Upper Channel'] = upper_intercept + upper_slope * recent_df['Day']
-            else:
-                recent_df['Upper Channel'] = np.nan
-            
-            # Lower channel: Regression on lows
-            lows = recent_df[recent_df['Close'] == recent_df['Low']]
-            if len(lows) > 2:
-                model_lower = LinearRegression()
-                model_lower.fit(lows[['Day']], lows['Low'])
-                lower_slope = model_lower.coef_[0]
-                lower_intercept = model_lower.intercept_
-                recent_df['Lower Channel'] = lower_intercept + lower_slope * recent_df['Day']
-            else:
-                recent_df['Lower Channel'] = np.nan
-            
-            # Check if channel is bullish (positive slope)
-            is_bullish = (upper_slope > 0) and (lower_slope > 0) and abs(upper_slope - lower_slope) < 0.1 * abs(upper_slope)  # Parallel check
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Close'], mode='lines', name='Close Price'))
-            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Upper Channel'], mode='lines', name='Upper Channel', line=dict(dash='dash')))
-            fig.add_trace(go.Scatter(x=recent_df.index, y=recent_df['Lower Channel'], mode='lines', name='Lower Channel', line=dict(dash='dash')))
-            fig.update_layout(title='Bullish Channel Analysis', xaxis_title='Date', yaxis_title='Price')
-            st.plotly_chart(fig, use_container_width=True)
-            
-            if is_bullish:
-                st.write("**Results:** Bullish channel detected. Price is trending upward within parallel lines.")
-                st.write(f"Upper Channel Slope: {upper_slope:.4f}")
-                st.write(f"Lower Channel Slope: {lower_slope:.4f}")
-                st.write("Recommendation: Buy on dips to lower channel, sell near upper. Watch for breakout.")
-            else:
-                st.write("**Results:** No clear bullish channel detected. Slopes may not be positive or parallel.")
-            
-            # All results: Display channel values
-            st.write("Recent Channel Values:")
-            channel_df = recent_df[['Close', 'Upper Channel', 'Lower Channel']].tail(10)
-            st.dataframe(channel_df)
-
-    elif selected_tab == 'Machine Learning Models':
-        st.header("Machine Learning Models")
-        st.write("**Meaning:** Uses AI (LSTM) to predict future prices based on historical patterns. Low MSE indicates accurate model.")
-        if len(stock_df) < 60:
-            st.write("Insufficient data for ML training.")
-        else:
-            prices = stock_df['Close'].values.reshape(-1, 1)
-            scaler = MinMaxScaler(feature_range=(0, 1))
-            scaled_prices = scaler.fit_transform(prices)
-            
-            seq_length = 60
-            X, y = [], []
-            for i in range(len(scaled_prices) - seq_length):
-                X.append(scaled_prices[i:i+seq_length])
-                y.append(scaled_prices[i+seq_length])
-            X, y = np.array(X), np.array(y)
-            
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-            
-            class LSTMModel(nn.Module):
-                def __init__(self):
-                    super(LSTMModel, self).__init__()
-                    self.lstm = nn.LSTM(1, 50, num_layers=1, batch_first=True)
-                    self.fc = nn.Linear(50, 1)
-                
-                def forward(self, x):
-                    h0 = torch.zeros(1, x.size(0), 50)
-                    c0 = torch.zeros(1, x.size(0), 50)
-                    out, _ = self.lstm(x, (h0, c0))
-                    out = self.fc(out[:, -1, :])
-                    return out
-            
-            model = LSTMModel()
-            criterion = nn.MSELoss()
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
-            
-            epochs = 10
-            for epoch in range(epochs):
-                inputs = torch.from_numpy(X_train).float()
-                targets = torch.from_numpy(y_train).float()
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-            
-            with torch.no_grad():
-                test_inputs = torch.from_numpy(X_test).float()
-                predicted = model(test_inputs).numpy()
-                predicted = scaler.inverse_transform(predicted)
-                actual = scaler.inverse_transform(y_test)
-            
-            test_df = pd.DataFrame({'Actual': actual.flatten(), 'Predicted': predicted.flatten()})
-            fig = px.line(test_df, title='LSTM Price Prediction', labels={'index': 'Time Steps', 'value': 'Price'})
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.write("Mean Squared Error:", np.mean((predicted - actual)**2))
+        st.write("**Meaning:** Support is a floor price (buyers enter); resistance
