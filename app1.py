@@ -15,11 +15,10 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="Advanced Stock Analyzer", layout="wide", initial_sidebar_state="expanded")
 
 # Load the data
-df_stocks = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
-df_masi = pd.read_csv('masi_series.csv', parse_dates=['Date'])
+df = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
 
 # Unique stocks
-stocks = df_stocks['name'].unique()
+stocks = df['name'].unique()
 
 # Compute recommendations in background with enhanced math (weighted scores and probability-like normalization)
 # Improved: Added support/resistance checks, Fibonacci signals, and now Ichimoku for more reliability
@@ -27,7 +26,7 @@ stocks = df_stocks['name'].unique()
 if 'recommendations' not in st.session_state:
     recos = {}
     for stock in stocks:
-        stock_df_temp = df_stocks[df_stocks['name'] == stock].set_index('Date').sort_index()
+        stock_df_temp = df[df['name'] == stock].set_index('Date').sort_index()
         if len(stock_df_temp) < 100:
             continue  # Skip short histories
         
@@ -215,7 +214,6 @@ with st.sidebar:
     st.markdown("### Navigation")
     selected_tab = st.radio("Go to", [
         'Recommendations',
-        'Market Overview',
         'All Stocks Analysis',
         'Discounted Cash Flow (DCF)',
         'Earnings-Based Valuation',
@@ -236,7 +234,7 @@ with st.sidebar:
     selected_stock = st.selectbox('Stock', stocks)
 
 # Filter data for selected stock
-stock_df = df_stocks[df_stocks['name'] == selected_stock].set_index('Date').sort_index()
+stock_df = df[df['name'] == selected_stock].set_index('Date').sort_index()
 
 # Main content with columns for modern layout
 col1, col2 = st.columns([3, 1])
@@ -287,61 +285,14 @@ with col1:
                 for tgt_price in data['targets'].values():
                     fig.add_hline(y=tgt_price, line_dash="dash", line_color="green", annotation_text=f"Target {tgt_price:.2f}")
                 fig.update_layout(title=f'Price Projection for {stock}', xaxis_title='Date', yaxis_title='Price', height=300)
-                st.plotly_chart(fig, use_container_width=True)
-
-    elif selected_tab == 'Market Overview':
-        st.header("Market Overview (MASI Index)")
-        st.write("**Meaning:** Analyzes the overall market trend using the MASI index. Provides insights into recent performance and future perspectives based on technical analysis.")
-        
-        masi_df = df_masi.set_index('Date').sort_index()
-        
-        # Plot index chart
-        fig = go.Figure()
-        fig.add_trace(go.Candlestick(x=masi_df.index,
-                                     open=masi_df['Open'],
-                                     high=masi_df['High'],
-                                     low=masi_df['Low'],
-                                     close=masi_df['Close'], name='MASI Index'))
-        fig.update_layout(title='MASI Index Chart', xaxis_title='Date', yaxis_title='Index Value')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Recent performance
-        recent_change = (masi_df['Close'].iloc[-1] - masi_df['Close'].iloc[-30]) / masi_df['Close'].iloc[-30] * 100 if len(masi_df) > 30 else 0
-        st.write(f"Recent 30-Day Change: {recent_change:.2f}%")
-        
-        # Technical analysis on MASI
-        masi_rsi = compute_rsi(masi_df['Close'])
-        st.write("Current RSI:", masi_rsi.iloc[-1])
-        
-        masi_macd_line, masi_signal_line, _ = compute_macd(masi_df['Close'])
-        st.write("Current MACD:", masi_macd_line.iloc[-1])
-        st.write("Current MACD Signal:", masi_signal_line.iloc[-1])
-        
-        # Future perspective: Simple linear projection
-        recent_masi = masi_df.tail(50).copy()
-        recent_masi['Day'] = np.arange(len(recent_masi))
-        model = LinearRegression()
-        model.fit(recent_masi[['Day']], recent_masi['Close'])
-        future_days = np.arange(51, 81).reshape(-1, 1)
-        future_prices = model.predict(future_days)
-        st.write("Short-Term Projection (Next 30 Days):")
-        proj_fig = px.line(x=np.arange(50), y=recent_masi['Close'], labels={'x': 'Days', 'y': 'Index'})
-        proj_fig.add_trace(go.Scatter(x=np.arange(50, 80), y=future_prices, mode='lines', name='Projection'))
-        st.plotly_chart(proj_fig)
-        
-        if masi_macd_line.iloc[-1] > masi_signal_line.iloc[-1] and masi_rsi.iloc[-1] < 70:
-            st.write("Perspective: Bullish - Market may continue upward.")
-        elif masi_rsi.iloc[-1] > 70:
-            st.write("Perspective: Overbought - Potential correction.")
-        else:
-            st.write("Perspective: Neutral - Monitor for signals.")
+                st.plotly_chart(fig, width='stretch')
 
     elif selected_tab == 'All Stocks Analysis':
         st.header("Full Analysis of All Stocks")
         st.write("**Meaning:** This tab provides a comprehensive overview of all stocks' scores, probabilities, and reasons based on multiple technical indicators.")
         all_df = pd.DataFrame.from_dict(st.session_state.all_recos, orient='index')
         all_df = all_df.sort_values('score', ascending=False)
-        st.dataframe(all_df[['score', 'prob', 'reasons']], use_container_width=True)
+        st.dataframe(all_df[['score', 'prob', 'reasons']], width='stretch')
         fig = px.bar(all_df.reset_index(), x='index', y='prob', title='Buy Probability by Stock')
         st.plotly_chart(fig)
 
@@ -384,7 +335,7 @@ with col1:
                                             low=stock_df['Low'],
                                             close=stock_df['Close'])])
         fig.update_layout(title='Candlestick Chart', xaxis_title='Date', yaxis_title='Price')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         st.write("Result: Inspect the chart for patterns like dojis (Open ≈ Close) or hammers (small body, long lower wick).")
 
     elif selected_tab == 'Support & Resistance':
@@ -399,7 +350,7 @@ with col1:
         fig.add_trace(go.Scatter(x=stock_df.index[max_idx], y=stock_df['Close'].iloc[max_idx], mode='markers', marker=dict(color='red'), name='Resistance'))
         fig.add_trace(go.Scatter(x=stock_df.index[min_idx], y=stock_df['Close'].iloc[min_idx], mode='markers', marker=dict(color='green'), name='Support'))
         fig.update_layout(title='Support and Resistance', xaxis_title='Date', yaxis_title='Price')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         st.write("Key Supports:", stock_df['Close'].iloc[min_idx].tolist())
         st.write("Key Resistances:", stock_df['Close'].iloc[max_idx].tolist())
@@ -428,7 +379,7 @@ with col1:
         for lvl, fib in zip(levels, fib_levels):
             fig.add_hline(y=fib, line_dash="dash", line_color="orange", annotation_text=f"{lvl*100:.1f}%")
         fig.update_layout(title='Fibonacci Levels', xaxis_title='Date', yaxis_title='Price')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         st.write("Fibonacci Levels:", {f'{levels[i]*100}%': fib_levels[i] for i in range(len(levels))})
 
@@ -445,7 +396,7 @@ with col1:
         fig.add_trace(go.Scatter(x=stock_df.index, y=ema_20, mode='lines', name='EMA 20'))
         fig.add_trace(go.Scatter(x=stock_df.index, y=sma_50, mode='lines', name='SMA 50'))
         fig.update_layout(title='Moving Averages', xaxis_title='Date', yaxis_title='Price')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         st.write("Current SMA 20:", sma_20.iloc[-1])
         st.write("Current EMA 20:", ema_20.iloc[-1])
@@ -469,7 +420,7 @@ with col1:
         fig.add_trace(go.Scatter(x=stock_df.index, y=signal_line, mode='lines', name='Signal Line'))
         fig.add_trace(go.Bar(x=stock_df.index, y=histogram, name='Histogram', marker_color='gray'))
         fig.update_layout(title='MACD', xaxis_title='Date')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         st.write("Current MACD:", macd_line.iloc[-1])
         st.write("Current Signal:", signal_line.iloc[-1])
@@ -492,7 +443,7 @@ with col1:
         fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
         fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
         fig.update_layout(title='RSI', xaxis_title='Date', yaxis_title='RSI Value')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         st.write("Current RSI:", rsi.iloc[-1])
         if rsi.iloc[-1] > 70:
@@ -517,7 +468,7 @@ with col1:
             fig.add_trace(go.Scatter(x=stock_df.index, y=senkou_b, mode='lines', name='Senkou Span B', fill='tonexty', fillcolor='rgba(0,255,0,0.1)' if senkou_a.iloc[-1] > senkou_b.iloc[-1] else 'rgba(255,0,0,0.1)'))
             fig.add_trace(go.Scatter(x=stock_df.index, y=chikou_span, mode='lines', name='Chikou Span'))
             fig.update_layout(title='Ichimoku Cloud', xaxis_title='Date', yaxis_title='Price')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             st.write("Current Tenkan-sen:", tenkan_sen.iloc[-1])
             st.write("Current Kijun-sen:", kijun_sen.iloc[-1])
@@ -546,7 +497,7 @@ with col1:
             fig.add_trace(go.Scatter(x=stock_df.index, y=ma, mode='lines', name='Middle Band (SMA)'))
             fig.add_trace(go.Scatter(x=stock_df.index, y=lower_band, mode='lines', name='Lower Band'))
             fig.update_layout(title='Bollinger Bands', xaxis_title='Date', yaxis_title='Price')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             st.write("Current Upper Band:", upper_band.iloc[-1])
             st.write("Current Middle Band:", ma.iloc[-1])
@@ -616,6 +567,6 @@ with col1:
             
             test_df = pd.DataFrame({'Actual': actual.flatten(), 'Predicted': predicted.flatten()})
             fig = px.line(test_df, title='LSTM Price Prediction', labels={'index': 'Time Steps', 'value': 'Price'})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             st.write("Mean Squared Error:", np.mean((predicted - actual)**2))
