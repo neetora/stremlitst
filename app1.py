@@ -12,13 +12,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 
 # Modern UI/UX: Set page config for wide layout and theme
-st.set_page_config(page_title="Stock Analyzer", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Advanced Stock Analyzer", layout="wide", initial_sidebar_state="expanded")
 
 # Load the data
-df = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
+df_stocks = pd.read_csv('stocks_series.csv', parse_dates=['Date'])
+df_masi = pd.read_csv('masi_series.csv', parse_dates=['Date'])
 
 # Unique stocks
-stocks = df['name'].unique()
+stocks = df_stocks['name'].unique()
 
 # Compute recommendations in background with enhanced math (weighted scores and probability-like normalization)
 # Improved: Added support/resistance checks, Fibonacci signals, and now Ichimoku for more reliability
@@ -26,7 +27,7 @@ stocks = df['name'].unique()
 if 'recommendations' not in st.session_state:
     recos = {}
     for stock in stocks:
-        stock_df_temp = df[df['name'] == stock].set_index('Date').sort_index()
+        stock_df_temp = df_stocks[df_stocks['name'] == stock].set_index('Date').sort_index()
         if len(stock_df_temp) < 100:
             continue  # Skip short histories
         
@@ -214,6 +215,7 @@ with st.sidebar:
     st.markdown("### Navigation")
     selected_tab = st.radio("Go to", [
         'Recommendations',
+        'Market Overview',
         'All Stocks Analysis',
         'Discounted Cash Flow (DCF)',
         'Earnings-Based Valuation',
@@ -234,7 +236,7 @@ with st.sidebar:
     selected_stock = st.selectbox('Stock', stocks)
 
 # Filter data for selected stock
-stock_df = df[df['name'] == selected_stock].set_index('Date').sort_index()
+stock_df = df_stocks[df_stocks['name'] == selected_stock].set_index('Date').sort_index()
 
 # Main content with columns for modern layout
 col1, col2 = st.columns([3, 1])
@@ -286,6 +288,53 @@ with col1:
                     fig.add_hline(y=tgt_price, line_dash="dash", line_color="green", annotation_text=f"Target {tgt_price:.2f}")
                 fig.update_layout(title=f'Price Projection for {stock}', xaxis_title='Date', yaxis_title='Price', height=300)
                 st.plotly_chart(fig, use_container_width=True)
+
+    elif selected_tab == 'Market Overview':
+        st.header("Market Overview (MASI Index)")
+        st.write("**Meaning:** Analyzes the overall market trend using the MASI index. Provides insights into recent performance and future perspectives based on technical analysis.")
+        
+        masi_df = df_masi.set_index('Date').sort_index()
+        
+        # Plot index chart
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(x=masi_df.index,
+                                     open=masi_df['Open'],
+                                     high=masi_df['High'],
+                                     low=masi_df['Low'],
+                                     close=masi_df['Close'], name='MASI Index'))
+        fig.update_layout(title='MASI Index Chart', xaxis_title='Date', yaxis_title='Index Value')
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Recent performance
+        recent_change = (masi_df['Close'].iloc[-1] - masi_df['Close'].iloc[-30]) / masi_df['Close'].iloc[-30] * 100 if len(masi_df) > 30 else 0
+        st.write(f"Recent 30-Day Change: {recent_change:.2f}%")
+        
+        # Technical analysis on MASI
+        masi_rsi = compute_rsi(masi_df['Close'])
+        st.write("Current RSI:", masi_rsi.iloc[-1])
+        
+        masi_macd_line, masi_signal_line, _ = compute_macd(masi_df['Close'])
+        st.write("Current MACD:", masi_macd_line.iloc[-1])
+        st.write("Current MACD Signal:", masi_signal_line.iloc[-1])
+        
+        # Future perspective: Simple linear projection
+        recent_masi = masi_df.tail(50).copy()
+        recent_masi['Day'] = np.arange(len(recent_masi))
+        model = LinearRegression()
+        model.fit(recent_masi[['Day']], recent_masi['Close'])
+        future_days = np.arange(51, 81).reshape(-1, 1)
+        future_prices = model.predict(future_days)
+        st.write("Short-Term Projection (Next 30 Days):")
+        proj_fig = px.line(x=np.arange(50), y=recent_masi['Close'], labels={'x': 'Days', 'y': 'Index'})
+        proj_fig.add_trace(go.Scatter(x=np.arange(50, 80), y=future_prices, mode='lines', name='Projection'))
+        st.plotly_chart(proj_fig)
+        
+        if masi_macd_line.iloc[-1] > masi_signal_line.iloc[-1] and masi_rsi.iloc[-1] < 70:
+            st.write("Perspective: Bullish - Market may continue upward.")
+        elif masi_rsi.iloc[-1] > 70:
+            st.write("Perspective: Overbought - Potential correction.")
+        else:
+            st.write("Perspective: Neutral - Monitor for signals.")
 
     elif selected_tab == 'All Stocks Analysis':
         st.header("Full Analysis of All Stocks")
